@@ -10,7 +10,8 @@ const FileConfig = struct {
     bytes_per_row: usize,
     rows_in_file: usize,
     filename: []const u8,
-    integer_slices: Pair(Pair(usize)),
+    integer_digits: u8, // Number of digits in an integer
+    integer_gap: u8, // Gap between two integers in a row
     heap_buffer_size: usize,
 };
 
@@ -42,51 +43,32 @@ fn getConfig() FileConfig {
         .rows_in_file = 1000,
         .filename = "1.txt",
         .heap_buffer_size = 20000, // Don't know how to calculate exact value but its something between 10k and 20k
-        .integer_slices = Pair(Pair(usize)){
-            .a = Pair(usize){
-                .a = 0,
-                .b = 5,
-            },
-            .b = Pair(usize){
-                .a = 8,
-                .b = 13,
-            },
-        },
+        .integer_digits = 5,
+        .integer_gap = 3,
     };
 }
 
-fn getSlice(comptime config: FileConfig, buffer: RowBuffer(config), slice: Pair(usize)) []const u8 {
-    return buffer[slice.a..slice.b];
-}
-
-fn parseSlice(comptime config: FileConfig, buffer: RowBuffer(config), slice: Pair(usize)) !config.integer_type {
-    return try std.fmt.parseInt(config.integer_type, getSlice(config, buffer, slice), config.integer_base);
-}
-
-fn getRowSlice(comptime config: FileConfig, index: usize) Pair(usize) {
-    const a = index * config.bytes_per_row;
-    const b = (index + 1) * config.bytes_per_row;
-    return Pair(usize){
-        .a = a,
-        .b = b,
-    };
-}
-
-fn readSlice(comptime config: FileConfig, buffer: *InputBuffer(config), index: usize) RowBuffer(config) {
-    const indexRange = getRowSlice(config, index);
-    var slice: RowBuffer(config) = undefined;
-    for (indexRange.a..indexRange.b) |i| {
-        slice[i - indexRange.a] = buffer[i];
+fn parseRow(comptime config: FileConfig, buffer: *InputBuffer(config), index_offset: usize) config.integer_type {
+    const ascii_offset: u8 = 48;
+    var result: usize = 0;
+    for (0..config.integer_digits) |i| {
+        const index = config.integer_digits - i - 1 + index_offset;
+        const digit_char = buffer[index];
+        const digit = digit_char - ascii_offset;
+        result += @as(usize, digit) * std.math.pow(usize, 10, i);
     }
-    return slice;
+    return @intCast(result);
 }
 
-fn setPair(comptime config: FileConfig, buffer: *InputBuffer(config), arr: *ArrayPair(config), index: usize) !void {
-    const slice = readSlice(config, buffer, index);
-    const a = try parseSlice(config, slice, config.integer_slices.a);
-    const b = try parseSlice(config, slice, config.integer_slices.b);
-    arr.a[index] = a;
-    arr.b[index] = b;
+fn setPair(comptime config: FileConfig, input: *InputBuffer(config), output: *ArrayPair(config), row_index: usize) void {
+    const row_offset = row_index * config.bytes_per_row;
+    const second_integer_offset = config.integer_digits + config.integer_gap;
+
+    const a = parseRow(config, input, row_offset);
+    const b = parseRow(config, input, second_integer_offset + row_offset);
+
+    output.a[row_index] = a;
+    output.b[row_index] = b;
 }
 
 fn readFile(comptime config: FileConfig) !ArrayPair(config) {
@@ -102,8 +84,8 @@ fn readFile(comptime config: FileConfig) !ArrayPair(config) {
     };
 
     read_size = try file.read(&buffer);
-    for (0..config.rows_in_file) |i| {
-        try setPair(config, &buffer, &array_pair, i);
+    for (0..config.rows_in_file) |row_index| {
+        setPair(config, &buffer, &array_pair, row_index);
     }
 
     return array_pair;
