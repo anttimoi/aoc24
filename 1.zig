@@ -88,8 +88,8 @@ fn readFile(comptime config: FileConfig) !ArrayPair(config) {
 }
 
 fn sort(comptime config: FileConfig, array: *ArrayPair(config)) void {
-    std.mem.sort(config.integer_type, &array.a, {}, comptime std.sort.asc(config.integer_type));
-    std.mem.sort(config.integer_type, &array.b, {}, comptime std.sort.asc(config.integer_type));
+    std.sort.pdq(config.integer_type, &array.a, {}, comptime std.sort.asc(config.integer_type));
+    std.sort.pdq(config.integer_type, &array.b, {}, comptime std.sort.asc(config.integer_type));
 }
 
 fn getDistanceSum(comptime config: FileConfig, array: *ArrayPair(config)) config.integer_type {
