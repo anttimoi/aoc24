@@ -15,6 +15,10 @@ const FileConfig = struct {
 };
 
 fn InputBuffer(comptime config: FileConfig) type {
+    return [config.bytes_per_row * config.rows_in_file]u8;
+}
+
+fn RowBuffer(comptime config: FileConfig) type {
     return [config.bytes_per_row]u8;
 }
 
@@ -51,17 +55,36 @@ fn getConfig() FileConfig {
     };
 }
 
-fn getSlice(comptime config: FileConfig, buffer: InputBuffer(config), slice: Pair(usize)) []const u8 {
+fn getSlice(comptime config: FileConfig, buffer: RowBuffer(config), slice: Pair(usize)) []const u8 {
     return buffer[slice.a..slice.b];
 }
 
-fn parseSlice(comptime config: FileConfig, buffer: InputBuffer(config), slice: Pair(usize)) !config.integer_type {
+fn parseSlice(comptime config: FileConfig, buffer: RowBuffer(config), slice: Pair(usize)) !config.integer_type {
     return try std.fmt.parseInt(config.integer_type, getSlice(config, buffer, slice), config.integer_base);
 }
 
-fn setPair(comptime config: FileConfig, buffer: InputBuffer(config), arr: *ArrayPair(config), index: usize) !void {
-    const a = try parseSlice(config, buffer, config.integer_slices.a);
-    const b = try parseSlice(config, buffer, config.integer_slices.b);
+fn getRowSlice(comptime config: FileConfig, index: usize) Pair(usize) {
+    const a = index * config.bytes_per_row;
+    const b = (index + 1) * config.bytes_per_row;
+    return Pair(usize){
+        .a = a,
+        .b = b,
+    };
+}
+
+fn readSlice(comptime config: FileConfig, buffer: *InputBuffer(config), index: usize) RowBuffer(config) {
+    const indexRange = getRowSlice(config, index);
+    var slice: RowBuffer(config) = undefined;
+    for (indexRange.a..indexRange.b) |i| {
+        slice[i - indexRange.a] = buffer[i];
+    }
+    return slice;
+}
+
+fn setPair(comptime config: FileConfig, buffer: *InputBuffer(config), arr: *ArrayPair(config), index: usize) !void {
+    const slice = readSlice(config, buffer, index);
+    const a = try parseSlice(config, slice, config.integer_slices.a);
+    const b = try parseSlice(config, slice, config.integer_slices.b);
     arr.a[index] = a;
     arr.b[index] = b;
 }
@@ -72,20 +95,15 @@ fn readFile(comptime config: FileConfig) !ArrayPair(config) {
 
     var buffer: InputBuffer(config) = undefined;
     var read_size: usize = 0;
-    var index: usize = 0;
 
     var array_pair = ArrayPair(config){
         .a = undefined,
         .b = undefined,
     };
 
-    while (true) {
-        read_size = try file.read(&buffer);
-        const is_eof = read_size == 0;
-        if (is_eof) break;
-
-        try setPair(config, buffer, &array_pair, index);
-        index += 1;
+    read_size = try file.read(&buffer);
+    for (0..config.rows_in_file) |i| {
+        try setPair(config, &buffer, &array_pair, i);
     }
 
     return array_pair;
