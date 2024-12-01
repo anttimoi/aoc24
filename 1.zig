@@ -72,18 +72,14 @@ fn setPair(comptime config: FileConfig, input: *InputBuffer(config), output: *Ar
 }
 
 fn readFile(comptime config: FileConfig) !ArrayPair(config) {
-    var file = try std.fs.cwd().openFile(config.filename, .{});
-    defer file.close();
-
     var buffer: InputBuffer(config) = undefined;
-    var read_size: usize = 0;
+    _ = try std.fs.cwd().readFile(config.filename, &buffer);
 
     var array_pair = ArrayPair(config){
         .a = undefined,
         .b = undefined,
     };
 
-    read_size = try file.read(&buffer);
     for (0..config.rows_in_file) |row_index| {
         setPair(config, &buffer, &array_pair, row_index);
     }
@@ -96,25 +92,15 @@ fn sort(comptime config: FileConfig, array: *ArrayPair(config)) void {
     std.mem.sort(config.integer_type, &array.b, {}, comptime std.sort.asc(config.integer_type));
 }
 
-fn getDistances(comptime config: FileConfig, array: *ArrayPair(config)) DistanceArray(config) {
-    var distances: DistanceArray(config) = undefined;
-
-    for (0..config.rows_in_file) |i| {
-        if (array.a[i] > array.b[i]) {
-            distances[i] = array.a[i] - array.b[i];
-        } else {
-            distances[i] = array.b[i] - array.a[i];
-        }
-    }
-
-    return distances;
-}
-
-fn getSum(comptime config: FileConfig, distances: *DistanceArray(config)) config.integer_type {
+fn getDistanceSum(comptime config: FileConfig, array: *ArrayPair(config)) config.integer_type {
     var sum: config.integer_type = 0;
 
     for (0..config.rows_in_file) |i| {
-        sum += distances[i];
+        if (array.a[i] > array.b[i]) {
+            sum += array.a[i] - array.b[i];
+        } else {
+            sum += array.b[i] - array.a[i];
+        }
     }
 
     return sum;
@@ -130,16 +116,6 @@ fn countOccurence(comptime config: FileConfig, integer: config.integer_type, arr
     }
 
     return count;
-}
-
-fn integerIsNotInA(comptime config: FileConfig, integer: config.integer_type, array: ArrayPair(config)) bool {
-    for (0..config.rows_in_file) |i| {
-        if (array.a[i] == integer) {
-            return false;
-        }
-    }
-
-    return true;
 }
 
 fn getOccurenceCounts(comptime config: FileConfig, heap_buffer: *HeapBuffer(config), array: ArrayPair(config)) !std.AutoHashMap(config.integer_type, config.integer_type) {
@@ -178,8 +154,7 @@ pub fn part1() !Result {
 
     var algorithm_timer = try std.time.Timer.start();
     sort(config, &array_pair);
-    var distances = getDistances(config, &array_pair);
-    const sum = getSum(config, &distances);
+    const sum = getDistanceSum(config, &array_pair);
     const algorithm_duration = algorithm_timer.lap() / 1000;
 
     return common.Result{
