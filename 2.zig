@@ -10,10 +10,6 @@ const FileConfig = struct {
     filesize: usize,
 };
 
-fn CharBuffer(comptime config: FileConfig) type {
-    return [config.max_digits_per_level]u8;
-}
-
 fn Levels(comptime config: FileConfig) type {
     return struct {
         values: [config.max_levels_per_report]u8,
@@ -22,7 +18,7 @@ fn Levels(comptime config: FileConfig) type {
 }
 
 fn ReadState(comptime config: FileConfig) type {
-    return struct { safe_reports: u32, index: usize, char_buffer: CharBuffer(config), levels: Levels(config) };
+    return struct { safe_reports: u32, levels: Levels(config) };
 }
 
 fn FileContent(comptime config: FileConfig) type {
@@ -39,60 +35,28 @@ fn readFile(comptime config: FileConfig) !FileContent(config) {
     return buffer;
 }
 
-fn getInteger(comptime config: FileConfig, char_buffer: CharBuffer(config), digit_count: usize) u8 {
-    var integer: u8 = 0;
-    const ascii_offset = 48;
-    for (0..digit_count) |i| {
-        const digit = char_buffer[i] - ascii_offset;
-        const power: u8 = @intCast(digit_count - i - 1);
-        const significand = std.math.pow(u8, 10, power);
-        integer += @as(u8, digit) * significand;
-    }
-    return integer;
-}
-
-fn clearCharBuffer(comptime config: FileConfig, read_state: *ReadState(config)) void {
-    read_state.index = 0;
-}
-
-fn addChar(comptime config: FileConfig, read_state: *ReadState(config), byte: u8) void {
-    read_state.char_buffer[read_state.index] = byte;
-    read_state.index += 1;
-}
-
-fn addLevel(comptime config: FileConfig, read_state: *ReadState(config), integer: u8) void {
-    read_state.levels.values[read_state.levels.level_count] = integer;
-    read_state.levels.level_count += 1;
-}
-
-fn clearLevels(comptime config: FileConfig, read_state: *ReadState(config)) void {
-    read_state.levels.level_count = 0;
-}
-
 // So, a report only counts as safe if both of the following are true:
 // 1. The levels are either all increasing or all decreasing.
 // 2. Any two adjacent levels differ by at least one and at most three.
 fn reportIsSafe(comptime config: FileConfig, levels: Levels(config)) bool {
-    var last_level = levels.values[0];
     var all_increasing = true;
     var all_decreasing = true;
 
     for (1..levels.level_count) |i| {
         const level = levels.values[i];
+        const last_level = levels.values[i - 1];
 
-        if (level > last_level) {
-            all_decreasing = false;
-        } else if (level < last_level) {
-            all_increasing = false;
-        }
+        const change = level -% last_level;
+        const is_safe_change =
+            (change >= 1 and change <= 3) // Normal case
+        or (change <= 255 and change >= 253); // Underflow case;
 
-        const change = @abs(@as(i16, level) - @as(i16, last_level));
-        const is_safe_change = change >= 1 and change <= 3;
         if (!is_safe_change) {
             return false;
         }
 
-        last_level = level;
+        all_decreasing = all_decreasing and level <= last_level;
+        all_increasing = all_increasing and level >= last_level;
     }
 
     return all_increasing or all_decreasing;
@@ -124,30 +88,30 @@ fn reportIsSafe2(comptime config: FileConfig, levels: Levels(config)) bool {
 fn getNewReadState(comptime config: FileConfig) ReadState(config) {
     return ReadState(config){
         .safe_reports = 0,
-        .index = 0,
-        .char_buffer = undefined,
         .levels = Levels(config){ .values = undefined, .level_count = 0 },
     };
 }
 
 fn calculateSafeReports(comptime config: FileConfig, checker: Checker(config), content: *const FileContent(config)) u32 {
     var read_state = getNewReadState(config);
-
+    const ascii_zero = 48;
     for (content) |byte| {
-        if (byte == config.level_separator or byte == config.report_separator) {
-            const integer = getInteger(config, read_state.char_buffer, read_state.index);
-            addLevel(config, &read_state, integer);
-
+        if (byte < ascii_zero) {
             if (byte == config.report_separator) {
                 if (checker(config, read_state.levels)) {
                     read_state.safe_reports += 1;
                 }
-                clearLevels(config, &read_state);
+                read_state.levels.level_count = 0; // Next report
+            } else {
+                read_state.levels.level_count += 1; // Next level
             }
 
-            clearCharBuffer(config, &read_state);
+            // Clear next digit
+            read_state.levels.values[read_state.levels.level_count] = 0;
         } else {
-            addChar(config, &read_state, byte);
+            // Shift integer and add new digit
+            const digit = byte - ascii_zero;
+            read_state.levels.values[read_state.levels.level_count] = read_state.levels.values[read_state.levels.level_count] * 10 + digit;
         }
     }
 
