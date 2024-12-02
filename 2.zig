@@ -38,13 +38,22 @@ fn readFile(comptime config: FileConfig) !FileContent(config) {
 // So, a report only counts as safe if both of the following are true:
 // 1. The levels are either all increasing or all decreasing.
 // 2. Any two adjacent levels differ by at least one and at most three.
-fn reportIsSafe(comptime config: FileConfig, levels: Levels(config)) bool {
+fn reportIsSafe(comptime config: FileConfig, levels: Levels(config), skip_index: usize) bool {
     var all_increasing = true;
     var all_decreasing = true;
 
-    for (1..levels.level_count) |i| {
+    const first_index: usize = if (skip_index == 0) 2 else 1;
+    const last_index: usize = if (skip_index == levels.level_count - 1) levels.level_count - 1 else levels.level_count;
+
+    for (first_index..last_index) |i| {
+        if (i == skip_index) {
+            continue;
+        }
+
         const level = levels.values[i];
-        const last_level = levels.values[i - 1];
+
+        const last_level_index = if (i - 1 != skip_index) i - 1 else i - 2;
+        const last_level = levels.values[last_level_index];
 
         const change = level -% last_level;
         const is_safe_change =
@@ -62,27 +71,19 @@ fn reportIsSafe(comptime config: FileConfig, levels: Levels(config)) bool {
     return all_increasing or all_decreasing;
 }
 
-fn removeIndex(comptime config: FileConfig, levels: Levels(config), remove_index: usize) Levels(config) {
-    var new_levels = Levels(config){ .values = undefined, .level_count = levels.level_count - 1 };
-    var new_index: usize = 0;
-    for (0..levels.level_count) |old_index| {
-        if (old_index != remove_index) {
-            new_levels.values[new_index] = levels.values[old_index];
-            new_index += 1;
-        }
-    }
-    return new_levels;
+fn reportIsSafeWrapper1(comptime config: FileConfig, levels: Levels(config)) bool {
+    // Do not skip any index
+    return reportIsSafe(config, levels, levels.level_count);
 }
 
-fn reportIsSafe2(comptime config: FileConfig, levels: Levels(config)) bool {
+fn reportIsSafeWrapper2(comptime config: FileConfig, levels: Levels(config)) bool {
     for (0..levels.level_count) |index| {
-        const new_levels = removeIndex(config, levels, index);
-        if (reportIsSafe(config, new_levels)) {
+        if (reportIsSafe(config, levels, index)) {
             return true;
         }
     }
 
-    return reportIsSafe(config, levels);
+    return reportIsSafe(config, levels, levels.level_count);
 }
 
 fn getNewReadState(comptime config: FileConfig) ReadState(config) {
@@ -139,9 +140,9 @@ fn getConfig() FileConfig {
 }
 
 pub fn part1() !Result {
-    return part(getConfig(), reportIsSafe);
+    return part(getConfig(), reportIsSafeWrapper1);
 }
 
 pub fn part2() !Result {
-    return part(getConfig(), reportIsSafe2);
+    return part(getConfig(), reportIsSafeWrapper2);
 }
