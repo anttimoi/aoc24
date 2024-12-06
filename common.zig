@@ -27,3 +27,15 @@ pub fn readFile(comptime file: File) ![file.size]u8 {
     _ = try std.fs.cwd().readFile(file.name, &buffer);
     return buffer;
 }
+
+pub fn parseInteger(comptime T: type, buffer: []const u8) T {
+    var result: T = 0;
+
+    for (buffer) |char| {
+        result *= 10;
+        const digit = char - 48;
+        result += @intCast(digit);
+    }
+
+    return result;
+}
